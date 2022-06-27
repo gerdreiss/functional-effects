@@ -1,7 +1,9 @@
-target
-.bloop
-.metals
+.bloop/
+.bsp/
+.idea/
+.metals/
 null
 project/metals.sbt
 project/project/metals.sbt
 project/project/project/metals.sbt
+target
