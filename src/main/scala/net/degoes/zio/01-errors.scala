@@ -234,15 +234,14 @@ object SequentialCause extends ZIOAppDefault {
    * Using `Cause.++`, form a sequential cause by composing `failed1`
    * and `failed2`.
    */
-  lazy val composed = ???
+  lazy val composed = failed1 ++ failed2
 
   /**
    * EXERCISE
    *
    * Using `Cause.prettyPrint`, dump out `composed` to the console.
    */
-  val run =
-    ???
+  val run = Console.printLine(composed.prettyPrint)
 }
 
 object ParalellCause extends ZIOAppDefault {
@@ -256,15 +255,14 @@ object ParalellCause extends ZIOAppDefault {
    * Using `Cause.&&`, form a parallel cause by composing `failed1`
    * and `failed2`.
    */
-  lazy val composed = ???
+  lazy val composed = failed1 && failed2
 
   /**
    * EXERCISE
    *
    * Using `Cause.prettyPrint`, dump out `composed` to the console.
    */
-  val run =
-    ???
+  val run = Console.printLine(composed.prettyPrint)
 }
 
 object Sandbox extends ZIOAppDefault {
@@ -285,5 +283,5 @@ object Sandbox extends ZIOAppDefault {
    * resulting `Cause` value to the console using `Console.printLine`.
    */
   val run =
-    ???
+    composed.sandbox.fold(cause => Console.printLine(cause.prettyPrint), Console.printLine)
 }
