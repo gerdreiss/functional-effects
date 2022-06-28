@@ -1,10 +1,8 @@
 package net.degoes.zio
 
 import zio._
-import java.text.NumberFormat
+
 import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.Path
 import scala.io.Source
 
 object Cat extends ZIOAppDefault {
@@ -21,7 +19,9 @@ object Cat extends ZIOAppDefault {
    * it helpful to use the `getScalaSource` helper method defined above.
    */
   def readFile(file: String): ZIO[Any, IOException, String] =
-    ???
+    ZIO.attemptBlockingIO {
+      getScalaSource(file).getLines().mkString("\n")
+    }
 
   /**
    * EXERCISE
@@ -30,7 +30,7 @@ object Cat extends ZIOAppDefault {
    * contents of the specified file to standard output.
    */
   val run =
-    ???
+    readFile("build.sbt").flatMap(Console.printLine(_))
 }
 
 object CatEnsuring extends ZIOAppDefault {
@@ -50,13 +50,18 @@ object CatEnsuring extends ZIOAppDefault {
    * Using `ZIO#ensuring`, implement a safe version of `readFile` that cannot
    * fail to close the file, no matter what happens during reading.
    */
-  def readFile(file: String): ZIO[Any, IOException, String] =
-    ZIO.uninterruptible {
-      for {
-        source   <- open(file)
-        contents <- ZIO.attempt(source.getLines().mkString("\n"))
-      } yield contents
-    }.refineToOrDie[IOException]
+  def readFile(file: String): ZIO[Any, IOException, String] = {
+    ZIO.blocking {
+      ZIO.uninterruptible {
+        for {
+          source <- open(file)
+          contents <- ZIO
+                      .attempt(source.getLines().mkString("\n"))
+                      .ensuring(close(source).ignore)
+        } yield contents
+      }.refineToOrDie[IOException]
+    }
+  }
 
   val run =
     for {
@@ -86,7 +91,10 @@ object CatAcquireRelease extends ZIOAppDefault {
    * Using `ZIO#acquireReleaseWith`, implement a safe version of `readFile` that
    * cannot fail to close the file, no matter what happens during reading.
    */
-  def readFile(file: String): ZIO[Any, IOException, String] = ???
+  def readFile(file: String): ZIO[Any, IOException, String] =
+    ZIO.acquireReleaseWith(open(file))(close(_).orDie) { source =>
+      ZIO.attemptBlockingIO(source.getLines().mkString("\n"))
+    }
 
   val run =
     for {
@@ -103,13 +111,13 @@ object CatAcquireRelease extends ZIOAppDefault {
 object SourceScoped extends ZIOAppDefault {
 
   import java.io.IOException
-
   import scala.io.Source
 
-  final class ZSource private (private val source: Source) {
+  final class ZSource private(private val source: Source) {
     def execute[T](f: Source => T): ZIO[Any, IOException, T] =
       ZIO.attemptBlockingIO(f(source))
   }
+
   object ZSource {
 
     /**
@@ -125,9 +133,9 @@ object SourceScoped extends ZIOAppDefault {
       // A function that, when given the resource, returns an effect that
       // releases the resource:
       val close: ZSource => ZIO[Any, Nothing, Unit] =
-        _.execute(_.close()).orDie
+      _.execute(_.close()).orDie
 
-      ???
+      ZIO.acquireRelease(open)(close)
     }
   }
 
@@ -138,7 +146,13 @@ object SourceScoped extends ZIOAppDefault {
    * which resources are open), read the contents of the specified file into
    * a `String`.
    */
-  def readFile(file: String): ZIO[Any, IOException, String] = ???
+  def readFile(file: String): ZIO[Any, IOException, String] =
+    ZIO.scoped {
+      ZSource.make(file).flatMap(_.execute(_.getLines().mkString("\n")))
+    }
+
+  def concatFiles(files: Chunk[String]): ZIO[Any, IOException, String] =
+    ZIO.foreachPar(files)(readFile).map(_.mkString("\n"))
 
   /**
    * EXERCISE
@@ -147,12 +161,12 @@ object SourceScoped extends ZIOAppDefault {
    * command-line arguments to standard out.
    */
   val run =
-    ???
+    concatFiles(Chunk("build.sbt", ".gitignore")).flatMap(Console.printLine(_))
 }
 
 object CatIncremental extends ZIOAppDefault {
 
-  import java.io.{ FileInputStream, IOException, InputStream }
+  import java.io.{FileInputStream, IOException, InputStream}
 
   final case class FileHandle private (private val is: InputStream) {
     final def close: ZIO[Any, IOException, Unit] = ZIO.attemptBlockingIO(is.close())
@@ -175,8 +189,8 @@ object CatIncremental extends ZIOAppDefault {
    * HINT: `ZIO.acquireRelease` is the easiest way to do this!
    */
   object FileHandle {
-    final def open(file: String): ZIO[Any, IOException, FileHandle] =
-      ZIO.attemptBlockingIO(new FileHandle(new FileInputStream(file)))
+    final def open(file: String): ZIO[Scope, IOException, FileHandle] =
+      ZIO.acquireRelease(ZIO.attemptBlockingIO(new FileHandle(new FileInputStream(file))))(_.close.ignore)
   }
 
   /**
@@ -186,7 +200,10 @@ object CatIncremental extends ZIOAppDefault {
    * a time, stopping when there are no more chunks left.
    */
   def cat(fh: FileHandle): ZIO[Any, IOException, Unit] =
-    ???
+    fh.read.flatMap {
+      case None        => ZIO.unit
+      case Some(chunk) => Console.printLine(new String(chunk.toArray, StandardCharsets.UTF_8)) *> cat(fh)
+    }
 
   /**
    * EXERCISE
@@ -204,7 +221,7 @@ object CatIncremental extends ZIOAppDefault {
          * Open the specified file, safely create and use a file handle to
          * incrementally dump the contents of the file to standard output.
          */
-        ???
+        ZIO.scoped(FileHandle.open(file).flatMap(cat))
 
       case _ => Console.printLine("Usage: cat <file>")
     }
@@ -220,7 +237,11 @@ object AddFinalizer extends ZIOAppDefault {
    * version you implement need not be safe in the presence of interruption,
    * but it should be safe in the presence of errors.
    */
-  def acquireRelease[R, E, A](acquire: ZIO[R, E, A])(release: A => ZIO[R, Nothing, Any]): ZIO[R with Scope, E, A] = ???
+  def acquireRelease[R, E, A](acquire: ZIO[R, E, A])(release: A => ZIO[R, Nothing, Any]): ZIO[R with Scope, E, A] =
+    for {
+      resource <- acquire
+      _        <- ZIO.addFinalizer(release(resource))
+    } yield resource
 
   val run =
     for {

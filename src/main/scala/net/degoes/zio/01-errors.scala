@@ -3,8 +3,6 @@ package net.degoes.zio
 import zio._
 import java.io.IOException
 
-import java.io.IOException
-
 /*
  * INTRODUCTION
  *
@@ -172,16 +170,15 @@ object ErrorRefinement2 extends ZIOAppDefault {
    */
   lazy val getAlarmDuration: ZIO[Any, IOException, Duration] = {
     def parseDuration(input: String): IO[NumberFormatException, Duration] =
-      ZIO.attempt(Duration.fromSeconds(input.toLong))
+      ZIO.attempt(Duration.fromMillis((input.toDouble * 1000).toLong))
         .refineToOrDie[NumberFormatException]
 
     def fallback(input: String): ZIO[Any, IOException, Duration] =
       Console.printLine(s"The input $input is not valid.") *> getAlarmDuration
 
     for {
-      _        <- Console.printLine("Please enter the number of seconds to sleep: ")
-      input    <- Console.readLine
-      duration <- parseDuration(input) orElse fallback(input)
+      input    <- Console.readLine("Please enter the number of seconds to sleep: ")
+      duration <- parseDuration(input) <> fallback(input)
     } yield duration
   }
 
@@ -269,11 +266,11 @@ object Sandbox extends ZIOAppDefault {
 
   val failed1    = ZIO.fail("Uh oh 1")
   val failed2    = ZIO.fail("Uh oh 2")
-  val finalizer1 = ZIO.fail(new Exception("Finalizing 1!")).orDie
-  val finalizer2 = ZIO.fail(new Exception("Finalizing 2!")).orDie
+  val finalizer1 = ZIO.die(new Exception("Finalizing 1!"))
+  val finalizer2 = ZIO.die(new Exception("Finalizing 2!"))
 
   val composed = ZIO.uninterruptible {
-    (failed1 ensuring finalizer1) zipPar (failed2 ensuring finalizer2)
+    (failed1 ensuring finalizer1) <&> (failed2 ensuring finalizer2)
   }
 
   /**
@@ -283,5 +280,5 @@ object Sandbox extends ZIOAppDefault {
    * resulting `Cause` value to the console using `Console.printLine`.
    */
   val run =
-    composed.sandbox.fold(cause => Console.printLine(cause.prettyPrint), Console.printLine)
+    composed.catchAllCause(cause => Console.printLine(cause.prettyPrint))
 }
