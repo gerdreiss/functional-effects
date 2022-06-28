@@ -1,6 +1,7 @@
 package net.degoes.zio
 
 import zio._
+import java.io.IOException
 
 import java.io.IOException
 
@@ -44,17 +45,18 @@ object ErrorRecoveryOrElse extends ZIOAppDefault {
    * EXERCISE
    *
    * Using `ZIO#orElse` have the `run` function compose the preceding `failed`
-   * effect with another effect that succeeds with a success exit code.
+   * effect with another effect.
    */
   val run = failed <> Console.printLine("Hello") <> ZIO.succeed(42)
 }
 
 object ErrorShortCircuit extends ZIOAppDefault {
-
   val failed: ZIO[Any, Any, Unit] =
-    Console.printLine("About to fail...") *>
-      ZIO.fail("Uh oh!") *>
-      Console.printLine("This will NEVER be printed!")
+    for {
+      _ <- Console.printLine("About to fail...")
+      _ <- ZIO.fail("Uh oh!")
+      _ <- Console.printLine("This will NEVER be printed!")
+    } yield ()
 
   /**
    * EXERCISE
