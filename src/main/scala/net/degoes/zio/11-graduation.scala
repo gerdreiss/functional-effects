@@ -68,11 +68,11 @@ object SimpleActor extends ZIOAppDefault {
 
     (for {
       actor <- makeActor(0)
-      _ <- ZIO.foreachPar(temperatures) { temp =>
-            actor(AdjustTemperature(temp))
-          }
-      temp <- actor(ReadTemperature)
-      _    <- Console.printLine(s"Final temperature is ${temp}")
+      _     <- ZIO.foreachParDiscard(temperatures) { temp =>
+                 actor(AdjustTemperature(temp))
+               }
+      temp  <- actor(ReadTemperature)
+      _     <- Console.printLine(s"Final temperature is ${temp}")
     } yield ())
   }
 }

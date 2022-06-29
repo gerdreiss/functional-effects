@@ -133,7 +133,7 @@ object SourceScoped extends ZIOAppDefault {
       // A function that, when given the resource, returns an effect that
       // releases the resource:
       val close: ZSource => ZIO[Any, Nothing, Unit] =
-      _.execute(_.close()).orDie
+      _.execute(_.close()).ignore
 
       ZIO.acquireRelease(open)(close)
     }

@@ -1,6 +1,9 @@
 package net.degoes.zio
 
+import zio.Schedule.WithState
 import zio._
+
+import java.io.IOException
 
 object Retry {
 
@@ -9,7 +12,7 @@ object Retry {
    *
    * Using `Schedule.recurs`, create a schedule that recurs 5 times.
    */
-  val fiveTimes: Schedule[Any, Any, Int] = ???
+  val fiveTimes: Schedule[Any, Any, Long] = Schedule.recurs(5)
 
   /**
    * EXERCISE
@@ -17,14 +20,14 @@ object Retry {
    * Using the `ZIO.repeat`, repeat printing "Hello World" five times to the
    * console.
    */
-  val repeated1 = ???
+  val repeated1 = Console.printLine("Hello World").repeatN(4)
 
   /**
    * EXERCISE
    *
    * Using `Schedule.spaced`, create a schedule that recurs forever every 1 second.
    */
-  val everySecond = ???
+  val everySecond = Schedule.spaced(1.second)
 
   /**
    * EXERCISE
@@ -33,7 +36,7 @@ object Retry {
    * and the `everySecond` schedule, create a schedule that repeats fives times,
    * evey second.
    */
-  val fiveTimesEverySecond = ???
+  val fiveTimesEverySecond = Schedule.spaced(1.second) && fiveTimes
 
   /**
    * EXERCISE
@@ -41,7 +44,7 @@ object Retry {
    * Using the `ZIO#repeat`, repeat the action Console.printLine("Hi hi") using
    * `fiveTimesEverySecond`.
    */
-  val repeated2 = ???
+  val repeated2 = Console.printLine("Hi hi").repeat(fiveTimesEverySecond)
 
   /**
    * EXERCISE
@@ -50,7 +53,7 @@ object Retry {
    * schedule, create a schedule that repeats fives times rapidly, and then
    * repeats every second forever.
    */
-  val fiveTimesThenEverySecond = ???
+  val fiveTimesThenEverySecond = fiveTimes.andThen(everySecond)
 
   /**
    * EXERCISE

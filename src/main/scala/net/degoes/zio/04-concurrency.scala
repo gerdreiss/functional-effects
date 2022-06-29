@@ -2,6 +2,8 @@ package net.degoes.zio
 
 import zio._
 
+import java.io.IOException
+
 object ForkJoin extends ZIOAppDefault {
 
   val printer =
@@ -138,9 +140,14 @@ object AlarmAppImproved extends ZIOAppDefault {
     for {
       _        <- Console.printLine("Please enter the number of seconds to sleep: ")
       input    <- Console.readLine
-      duration <- parseDuration(input) orElse fallback
+      duration <- parseDuration(input) <> fallback
     } yield duration
   }
+
+  val infinitePrinter: ZIO[Any, IOException, Nothing] =
+    (Console.print(".") *> ZIO.sleep(1.second)).forever
+
+  val printWakeUp = Console.printLine("Wake up!")
 
   /**
    * EXERCISE
@@ -151,7 +158,14 @@ object AlarmAppImproved extends ZIOAppDefault {
    * prints out a wakeup alarm message, like "Time to wakeup!!!".
    */
   val run =
-    ???
+    for {
+      duration     <- getAlarmDuration
+      _            <- Console.printLine(s"Sleeping for ${duration.toMillis} milliseconds")
+      // printerFiber <- infinitePrinter.fork
+      // _            <- printerFiber.interrupt.delay(duration) *> printWakeUp
+      //              or
+      _            <- infinitePrinter.race(printWakeUp.delay(duration))
+    } yield ()
 }
 
 object ParallelZip extends ZIOAppDefault {
@@ -179,9 +193,6 @@ object ParallelZip extends ZIOAppDefault {
  */
 object RefExample extends ZIOAppDefault {
   import zio.Random._
-
-  import zio.Clock._
-  import zio.stm._
 
   /**
    * Some state to keep track of all points inside a circle,
@@ -238,7 +249,8 @@ object PromiseExample extends ZIOAppDefault {
    * Do some computation that produces an integer. When yare done, complete
    * the promise with `Promise#succeed`.
    */
-  def doCompute(result: Promise[Nothing, Int]): UIO[Unit] = ???
+  def doCompute(result: Promise[Nothing, Int]): UIO[Unit] =
+    result.succeed(42).unit
 
   /**
    * EXERCISE
@@ -247,7 +259,14 @@ object PromiseExample extends ZIOAppDefault {
    * that it can use, and then wait for the promise to be completed,
    * using `Promise#await`.
    */
-  lazy val waitForCompute: ZIO[Any, Nothing, Unit] = ???
+  lazy val waitForCompute: ZIO[Any, IOException, Unit] =
+    for {
+      promise <- Promise.make[Nothing, Int]
+      _       <- doCompute(promise).fork
+      _       <- Console.printLine("Waiting for computation to complete...")
+      value   <- promise.await
+      _       <- Console.printLine(s"Computation completed with value $value")
+    } yield ()
 
   val run =
     waitForCompute
@@ -269,7 +288,7 @@ object FiberRefExample extends ZIOAppDefault {
 
   val run =
     for {
-      ref   <- FiberRef.make[Int](0, identity(_), _ + _)
+      ref   <- FiberRef.make[Int](0, _ + 1, _ + _)
       _     <- ref.get.debug("parent before fork")
       child <- makeChild(ref).fork
       _     <- ref.get.debug("parent after fork")

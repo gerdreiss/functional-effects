@@ -1,8 +1,9 @@
 package net.degoes.zio
 
 import zio._
-import scala.concurrent.ExecutionContext
+
 import java.io.IOException
+import scala.concurrent.ExecutionContext
 
 object CustomRuntime {
   val defaultEnvironment  = ZEnvironment.empty
@@ -38,8 +39,11 @@ object CustomRuntime {
    * or `Unsafe.unsafe { ... }` (Scala 3) in order to call `run`.
    */
   def main(args: Array[String]): Unit =
-    ???
+    Unsafe.unsafe { implicit u =>
+      customRuntime.unsafe.run(program.provideEnvironment(ZEnvironment(AppConfig("config"))))
+    }
 }
+
 object ThreadPool extends ZIOAppDefault {
 
   lazy val dbPool: Executor = Executor.fromExecutionContext(ExecutionContext.global)
