@@ -37,7 +37,7 @@ import java.io.IOException
 /**
  * A good mental model for ZIO[R, E, A] is:
  * {{{
- *   ZEnvironment[R] => Either[E, A]
+ *   ZEnvironment[R] => Either[Cause[E], A]
  * }}}
  * This can be interpreted as a function which, given a ZIO environment
  * (which is a map that contain classes of different types), a ZIO
@@ -72,26 +72,27 @@ object ZIOModel {
   final case class ZIO[-R, +E, +A](run: ZEnvironment[R] => Either[E, A]) { self =>
     def map[B](f: A => B): ZIO[R, E, B] = ZIO(r => self.run(r).map(f))
 
-    def flatMap[R1 <: R, E1 >: E, B](f: A => ZIO[R1, E1, B]): ZIO[R1, E1, B] =
+    def flatMap[R1 <: R, E1 >: E, B](f: A => ZIO[R1, E1, B]): ZIO[R1, E1, B] = {
       ZIO(r =>
         for {
           a <- self.run(r)
           b <- f(a).run(r)
         } yield b
       )
+    }
 
     def zip[R1 <: R, E1 >: E, B](that: ZIO[R1, E1, B]): ZIO[R1, E1, (A, B)] =
+      // for {
+      //   a <- self
+      //   b <- that
+      // } yield (a, b)
+      // ZIO(r =>
+      //   for {
+      //     a <- self.run(r)
+      //     b <- that.run(r)
+      //   } yield (a, b)
+      // )
       self.flatMap(a => that.map(b => (a, b)))
-    // for {
-    //   a <- self
-    //   b <- that
-    // } yield (a, b)
-    // ZIO(r =>
-    //   for {
-    //     a <- self.run(r)
-    //     b <- that.run(r)
-    //   } yield (a, b)
-    // )
 
     def either: ZIO[R, Nothing, Either[E, A]] =
       ZIO(r => Right(self.run(r)))
@@ -275,9 +276,13 @@ object PromptName extends ZIOAppDefault {
    * success value of the left hand effect.
    */
   val run: ZIO[Any, IOException, Unit] =
-    Console.printLine("What is your name?").flatMap { _ =>
-      Console.readLine.flatMap(name => Console.printLine(s"Your name is: $name"))
-    }
+    Console.printLine("What is your name?")
+      .flatMap { _ =>
+        Console.readLine
+          .flatMap {
+            name => Console.printLine(s"Your name is: $name")
+          }
+      }
 
   /**
    * EXERCISE
@@ -303,7 +308,9 @@ object ForComprehension extends ZIOAppDefault {
   val run: ZIO[Any, IOException, Unit] = {
     //Console
     //  .printLine("What is your name?")
-    //  .flatMap(_ => Console.readLine.flatMap(name => Console.printLine(s"Your name is: ${name}")))
+    //  .flatMap(_ => Console
+    //    .readLine
+    //    .flatMap(name => Console.printLine(s"Your name is: ${name}")))
     for {
       _    <- Console.printLine("What is your name?")
       name <- Console.readLine

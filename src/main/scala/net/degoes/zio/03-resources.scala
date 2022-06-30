@@ -82,8 +82,8 @@ object CatAcquireRelease extends ZIOAppDefault {
   def open(file: String): ZIO[Any, IOException, Source] =
     ZIO.attemptBlockingIO(scala.io.Source.fromFile(file))
 
-  def close(source: Source): ZIO[Any, IOException, Unit] =
-    ZIO.attemptBlockingIO(source.close())
+  def close(source: Source): UIO[Unit] =
+    ZIO.attemptBlockingIO(source.close()).ignore
 
   /**
    * EXERCISE
@@ -92,7 +92,7 @@ object CatAcquireRelease extends ZIOAppDefault {
    * cannot fail to close the file, no matter what happens during reading.
    */
   def readFile(file: String): ZIO[Any, IOException, String] =
-    ZIO.acquireReleaseWith(open(file))(close(_).orDie) { source =>
+    ZIO.acquireReleaseWith(open(file))(close) { source =>
       ZIO.attemptBlockingIO(source.getLines().mkString("\n"))
     }
 
@@ -169,9 +169,9 @@ object CatIncremental extends ZIOAppDefault {
   import java.io.{FileInputStream, IOException, InputStream}
 
   final case class FileHandle private (private val is: InputStream) {
-    final def close: ZIO[Any, IOException, Unit] = ZIO.attemptBlockingIO(is.close())
+    def close: ZIO[Any, IOException, Unit] = ZIO.attemptBlockingIO(is.close())
 
-    final def read: ZIO[Any, IOException, Option[Chunk[Byte]]] =
+    def read: ZIO[Any, IOException, Option[Chunk[Byte]]] =
       ZIO.attemptBlockingIO {
         val array = Array.ofDim[Byte](1024)
         val len   = is.read(array)
@@ -245,7 +245,7 @@ object AddFinalizer extends ZIOAppDefault {
 
   val run =
     for {
-      _ <- acquireRelease(Console.printLine("Acquired!"))(_ => Console.printLine("Released!").orDie)
+      _ <- acquireRelease(Console.printLine("Acquired!"))(_ => Console.printLine("Released!").ignore)
       _ <- ZIO.fail("Uh oh!")
     } yield ()
 }

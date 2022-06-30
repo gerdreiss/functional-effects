@@ -75,7 +75,8 @@ object CounterExample extends ZIOAppDefault {
    * will be exported to monitoring systems.
    *
    */
-  lazy val printCounter: ZIO[Any, Nothing, Unit] = ???
+  lazy val printCounter: ZIO[Any, Nothing, Unit] =
+  requestCounter.value.flatMap(count => ZIO.log(s"Requests: $count"))
 
   lazy val run = {
     val processor = processRequest(Request("input")).repeatN(99)

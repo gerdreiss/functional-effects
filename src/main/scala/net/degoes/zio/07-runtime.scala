@@ -54,7 +54,8 @@ object ThreadPool extends ZIOAppDefault {
    * Using `ZIO#onExecutor`, write an `onDatabase` combinator that runs the
    * specified effect on the database thread pool.
    */
-  def onDatabase[R, E, A](zio: ZIO[R, E, A]): ZIO[R, E, A] = ???
+  def onDatabase[R, E, A](zio: ZIO[R, E, A]): ZIO[R, E, A] =
+    ZIO.onExecutor(dbPool)(zio)
 
   /**
    * EXERCISE
@@ -66,9 +67,9 @@ object ThreadPool extends ZIOAppDefault {
     val log = ZIO.succeed {
       val thread = Thread.currentThread()
 
-      val id        = ???
-      val name      = ???
-      val groupName = ???
+      val id        = thread.getId
+      val name      = thread.getName
+      val groupName = thread.getThreadGroup.getName
 
       println(s"Thread($id, $name, $groupName)")
     }
@@ -94,7 +95,7 @@ object ThreadPool extends ZIOAppDefault {
       Console.printLine("Main"))
 }
 
-object CustomLogger {
+object CustomLogger extends ZIOAppDefault {
 
   /**
    * EXERCISE
@@ -102,14 +103,14 @@ object CustomLogger {
    * Using `ZLogger.simple`, create a logger that dumps text strings to the console
    * using `println`.
    */
-  lazy val simpleLogger: ZLogger[String, Unit] = ???
+  lazy val simpleLogger: ZLogger[String, Unit] = ZLogger.simple[String, Unit](println)
 
   /**
    * EXERCISE
    *
    * Create a layer that will install your simple logger using Runtime.addLogger.
    */
-  lazy val withCustomLogger: ZLayer[Any, Nothing, Unit] = ???
+  lazy val withCustomLogger: ZLayer[Any, Nothing, Unit] = ZLayer.succeed(simpleLogger)
 
   /**
    * EXERCISE

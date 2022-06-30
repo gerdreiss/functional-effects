@@ -76,14 +76,14 @@ object ParallelFib extends ZIOAppDefault {
   }
 
   val run =
-    (for {
+    for {
       _ <- Console.printLine(
             "What number of the fibonacci sequence should we calculate?"
           )
       n <- Console.readLine.orDie.flatMap(input => ZIO.attempt(input.toInt)).eventually
       f <- fib(n)
       _ <- Console.printLine(s"fib($n) = $f")
-    } yield ())
+    } yield ()
 }
 
 object TimeoutExample extends ZIOAppDefault {
@@ -174,7 +174,7 @@ object ParallelZip extends ZIOAppDefault {
     if (n <= 1) ZIO.succeed(n)
     else
       ZIO.suspendSucceed {
-        (fib(n - 1) zipWith fib(n - 2))(_ + _)
+        (fib(n - 1) zipWith fib(n - 2)) (_ + _)
       }
 
   /**
@@ -183,8 +183,12 @@ object ParallelZip extends ZIOAppDefault {
    * Compute fib(10) and fib(13) in parallel using `ZIO#zipPar`, and display
    * the result.
    */
-  val run =
-    ???
+  val run = {
+    for {
+      x <- fib(10).zipPar(fib(13))
+      _ <- Console.printLine(s"fib(10) = ${x._1}, fib(13) = ${x._2}")
+    } yield ()
+  }
 }
 
 /**
