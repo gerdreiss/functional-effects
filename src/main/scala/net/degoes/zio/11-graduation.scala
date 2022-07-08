@@ -1,8 +1,8 @@
 package net.degoes.zio
 
 import zio._
-import java.text.NumberFormat
-import java.nio.charset.StandardCharsets
+
+import java.io.IOException
 
 object Sharding extends ZIOAppDefault {
 
@@ -21,13 +21,13 @@ object Sharding extends ZIOAppDefault {
     worker: A => ZIO[R, E, Unit]
   ): ZIO[R, Nothing, E] = ???
 
-  val run = {
+  val run: ZIO[Any with ZIOAppArgs with Scope, IOException, Unit] = {
     def makeWorker(ref: Ref[Int]): Int => ZIO[Any, String, Unit] =
       (work: Int) =>
         for {
           count <- ref.get
-          _ <- if (count < 100) Console.printLine(s"Worker is processing item ${work} after ${count}").orDie
-              else ZIO.fail(s"Uh oh, failed processing ${work} after ${count}")
+          _ <- if (count < 100) Console.printLine(s"Worker is processing item ${work} after $count").orDie
+              else ZIO.fail(s"Uh oh, failed processing ${work} after $count")
           _ <- ref.update(_ + 1)
         } yield ()
 
@@ -42,8 +42,6 @@ object Sharding extends ZIOAppDefault {
 }
 
 object SimpleActor extends ZIOAppDefault {
-
-  import zio.stm._
 
   sealed trait Command
   case object ReadTemperature                       extends Command
@@ -60,26 +58,41 @@ object SimpleActor extends ZIOAppDefault {
   def makeActor(initialTemperature: Double): UIO[TemperatureActor] = {
     type Bundle = (Command, Promise[Nothing, Double])
 
-    ???
+    def actorLogic(inbox: Queue[Bundle], current: Ref[Double]): UIO[Nothing] =
+      (for {
+        bundle            <- inbox.take
+        (command, promise) = bundle
+        value             <- command match {
+                               case ReadTemperature => current.get
+                               case AdjustTemperature(adjustment) => current.updateAndGet(_ + adjustment)
+                             }
+        _                 <- promise.succeed(value)
+      } yield ()).forever
+
+    for {
+      current <- Ref.make(initialTemperature)
+      inbox   <- Queue.bounded[Bundle](100)
+      _       <- actorLogic(inbox, current).fork
+    } yield (command: Command) =>
+      for {
+        promise <- Promise.make[Nothing, Double]
+        _       <- inbox.offer(command -> promise)
+        result  <- promise.await
+      } yield result
   }
 
-  val run = {
-    val temperatures = (0 to 100).map(_.toDouble)
-
-    (for {
+  val run: ZIO[Any with ZIOAppArgs with Scope, Throwable, Unit] =
+    for {
       actor <- makeActor(0)
-      _     <- ZIO.foreachParDiscard(temperatures) { temp =>
+      _     <- ZIO.foreachParDiscard((0 to 100).map(_.toDouble)) { temp =>
                  actor(AdjustTemperature(temp))
                }
       temp  <- actor(ReadTemperature)
       _     <- Console.printLine(s"Final temperature is ${temp}")
-    } yield ())
-  }
+    } yield ()
 }
 
 object parallel_web_crawler {
-
-  import zio.Clock._
 
   trait Web {
     def getURL(url: URL): IO[Exception, String]
@@ -100,12 +113,12 @@ object parallel_web_crawler {
    *
    * Using `ZIO.accessM`, delegate to the `Web` module's `getURL` function.
    */
-  def getURL(url: URL): ZIO[Web, Exception, String] = ???
+  def getURL(url: URL): ZIO[Web, Exception, String] =
+    ZIO.serviceWithZIO(_.getURL(url))
 
   final case class CrawlState[+E](visited: Set[URL], errors: List[E]) {
-    final def visitAll(urls: Set[URL]): CrawlState[E] = copy(visited = visited ++ urls)
-
-    final def logError[E1 >: E](e: E1): CrawlState[E1] = copy(errors = e :: errors)
+    def visitAll(urls: Set[URL]): CrawlState[E] = copy(visited = visited ++ urls)
+    def logError[E1 >: E](e: E1): CrawlState[E1] = copy(errors = e :: errors)
   }
 
   /**
@@ -122,12 +135,24 @@ object parallel_web_crawler {
     seeds: Set[URL],
     router: URL => Set[URL],
     processor: (URL, String) => IO[E, Unit]
-  ): ZIO[Web with Clock, Nothing, List[E]] = {
+  ): ZIO[Web, Nothing, List[E]] = {
     val emptySet = ZIO.succeed(Set.empty[URL])
 
-    def loop(seeds: Set[URL], ref: Ref[CrawlState[E]]): ZIO[Web with Clock, Nothing, Unit] =
+    def loop(seeds: Set[URL], ref: Ref[CrawlState[E]]): ZIO[Web, Nothing, Unit] =
       if (seeds.isEmpty) ZIO.unit
-      else ???
+      else ZIO
+        .foreachPar(seeds) { seed => {
+            for {
+              content  <- getURL(seed)
+              _        <- processor(seed, content).catchAll(e => ref.update(_.logError(e)))
+            } yield extractURLs(seed, content).toSet
+          } <> emptySet
+        }
+        .map(_.flatten)
+        .flatMap { newSeeds =>
+          ref.modify(state => (newSeeds -- state.visited, state.visitAll(newSeeds)))
+            .flatMap(loop(_, ref))
+        } @@ ZIOAspect.parallel(10)
 
     for {
       ref   <- Ref.make[CrawlState[E]](CrawlState(seeds, Nil))
@@ -142,7 +167,7 @@ object parallel_web_crawler {
   final case class URL private (parsed: io.lemonlabs.uri.Url) {
     import io.lemonlabs.uri._
 
-    final def relative(page: String): Option[URL] =
+    def relative(page: String): Option[URL] =
       scala.util.Try {
         val parts = parsed.path.parts
 
@@ -176,7 +201,7 @@ object parallel_web_crawler {
    * A function that extracts URLs from a given web page.
    */
   def extractURLs(root: URL, html: String): List[URL] = {
-    val pattern = "href=[\"\']([^\"\']+)[\"\']".r
+    val pattern = """href=["']([^"']+)["']""".r
 
     scala.util
       .Try({
@@ -212,7 +237,7 @@ object parallel_web_crawler {
     val testLayer: ZLayer[Any, Nothing, Web] = ???
 
     val TestRouter: URL => Set[URL] =
-      url => if (url.parsed.apexDomain == Some("zio.dev")) Set(url) else Set()
+      url => if (url.parsed.apexDomain.contains("zio.dev")) Set(url) else Set()
 
     val Processor: (URL, String) => IO[Unit, List[(URL, String)]] =
       (url, html) => ZIO.succeed(List(url -> html))
@@ -229,9 +254,6 @@ object parallel_web_crawler {
 }
 
 object Hangman extends ZIOAppDefault {
-  import Dictionary.Dictionary
-
-  import zio.Random._
   import java.io.IOException
 
   /**
@@ -291,13 +313,10 @@ object Hangman extends ZIOAppDefault {
   }
 
   final case class State(name: String, guesses: Set[Char], word: String) {
-    final def failures: Int = (guesses -- word.toSet).size
-
-    final def playerLost: Boolean = failures > 10
-
-    final def playerWon: Boolean = (word.toSet -- guesses).isEmpty
-
-    final def addChar(char: Char): State = copy(guesses = guesses + char)
+    def failures: Int = (guesses -- word.toSet).size
+    def playerLost: Boolean = failures > 10
+    def playerWon: Boolean = (word.toSet -- guesses).isEmpty
+    def addChar(char: Char): State = copy(guesses = guesses + char)
   }
 
   sealed trait GuessResult
@@ -339,11 +358,11 @@ object Hangman extends ZIOAppDefault {
 object TicTacToe extends ZIOAppDefault {
 
   sealed trait Mark {
-    final def renderChar: Char = this match {
+    def renderChar: Char = this match {
       case Mark.X => 'X'
       case Mark.O => 'O'
     }
-    final def render: String = renderChar.toString
+    def render: String = renderChar.toString
   }
   object Mark {
     case object X extends Mark
@@ -355,13 +374,13 @@ object TicTacToe extends ZIOAppDefault {
     /**
      * Retrieves the mark at the specified row/col.
      */
-    final def get(row: Int, col: Int): Option[Mark] =
+    def get(row: Int, col: Int): Option[Mark] =
       value.lift(row).flatMap(_.lift(col)).flatten
 
     /**
      * Places a mark on the board at the specified row/col.
      */
-    final def place(row: Int, col: Int, mark: Mark): Option[Board] =
+    def place(row: Int, col: Int, mark: Mark): Option[Board] =
       if (row >= 0 && col >= 0 && row < 3 && col < 3)
         Some(
           copy(value = value.updated(row, value(row).updated(col, Some(mark))))
@@ -379,12 +398,12 @@ object TicTacToe extends ZIOAppDefault {
     /**
      * Returns which mark won the game, if any.
      */
-    final def won: Option[Mark] =
+    def won: Option[Mark] =
       if (wonBy(Mark.X)) Some(Mark.X)
       else if (wonBy(Mark.O)) Some(Mark.O)
       else None
 
-    private final def wonBy(mark: Mark): Boolean =
+    private def wonBy(mark: Mark): Boolean =
       wonBy(0, 0, 1, 1, mark) ||
         wonBy(0, 2, 1, -1, mark) ||
         wonBy(0, 0, 0, 1, mark) ||
@@ -394,7 +413,7 @@ object TicTacToe extends ZIOAppDefault {
         wonBy(0, 1, 1, 0, mark) ||
         wonBy(0, 2, 1, 0, mark)
 
-    private final def wonBy(
+    private def wonBy(
       row0: Int,
       col0: Int,
       rowInc: Int,
@@ -404,7 +423,7 @@ object TicTacToe extends ZIOAppDefault {
       extractLine(row0, col0, rowInc, colInc).collect { case Some(v) => v }.toList == List
         .fill(3)(mark)
 
-    private final def extractLine(
+    private def extractLine(
       row0: Int,
       col0: Int,
       rowInc: Int,
